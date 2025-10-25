@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NBA Style Evolution Dashboard (1974–2025) — v4 (con predicción)</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  body { background:#0b0f17; color:#e5e7eb; font-family:sans-serif; margin:0; }
+  header{padding:20px; background:#111827; border-bottom:1px solid #1f2937;}
+  h1{margin:0;}
+  .container{padding:20px;}
+  .plot-card{background:#121826; border:1px solid #1f2937; border-radius:10px; padding:10px; margin-bottom:20px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>NBA Style Evolution — Dashboard v4</h1>
+  <div>Incluye predicción 3 años con IC 95% en el gráfico principal</div>
+</header>
+<div class="container">
+  <input type="file" id="file" accept=".csv" />
+  <div class="plot-card">
+    <div id="line_main" style="height:420px;"></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+const qs = id=>document.getElementById(id);
+const round=(x,d=2)=>Math.round(x*10**d)/10**d;
+function olsForecast(x,y,horizon=3,windowN=12){
+  const n=x.length; const start=Math.max(0,n-windowN);
+  const X=x.slice(start), Y=y.slice(start);
+  const mX=X.reduce((a,b)=>a+b,0)/X.length, mY=Y.reduce((a,b)=>a+b,0)/Y.length;
+  let Sxx=0,Sxy=0; for(let i=0;i<X.length;i++){Sxx+=(X[i]-mX)**2; Sxy+=(X[i]-mX)*(Y[i]-mY);}
+  const b1=Sxy/Sxx, b0=mY-b1*mX;
+  let SSE=0; for(let i=0;i<X.length;i++){const e=Y[i]-(b0+b1*X[i]); SSE+=e*e;}
+  const df=Math.max(1,X.length-2); const sigma2=SSE/df;
+  const t=2.0;
+  const lastX=X[X.length-1]; const preds=[];
+  for(let k=1;k<=horizon;k++){
+    const x0=lastX+k; const yhat=b0+b1*x0;
+    const se=Math.sqrt(sigma2*(1+1/X.length+((x0-mX)**2)/Sxx));
+    preds.push({x:x0,y:yhat,lo:yhat-t*se,hi:yhat+t*se});
+  }
+  return preds;
+}
+qs('file').addEventListener('change',ev=>{
+  const f=ev.target.files[0]; if(!f)return;
+  Papa.parse(f,{header:true,dynamicTyping:true,complete:res=>{
+    const data=res.data.filter(r=>r.season && r.pts_per_100_poss);
+    const x=data.map(r=>+r.season), y=data.map(r=>+r.pts_per_100_poss);
+    const preds=olsForecast(x,y);
+    const traceHist={x,y,mode:'lines+markers',name:'Histórico'};
+    const fx=preds.map(p=>p.x), fy=preds.map(p=>p.y);
+    const flo=preds.map(p=>p.lo), fhi=preds.map(p=>p.hi);
+    const tracePred={x:[x[x.length-1],...fx],y:[y[y.length-1],...fy],mode:'lines+markers',name:'Predicción',line:{dash:'dash'}};
+    const traceBandHi={x:[x[x.length-1],...fx],y:[y[y.length-1],...fhi],mode:'lines',line:{width:0},showlegend:false};
+    const traceBandLo={x:[x[x.length-1],...fx],y:[y[y.length-1],...flo],mode:'lines',fill:'tonexty',fillcolor:'rgba(96,165,250,0.2)',line:{width:0},name:'IC95%'};
+    Plotly.newPlot('line_main',[traceHist,traceBandHi,traceBandLo,tracePred],{paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{color:'#e5e7eb'}});
+  }});
+});
+</script>
+</body>
+</html>
